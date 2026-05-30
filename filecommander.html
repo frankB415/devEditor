@@ -1,0 +1,1529 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>File Commander</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg0:       #1a1a1a;
+      --bg1:       #222222;
+      --bg2:       #2a2a2a;
+      --bg3:       #333333;
+      --border:    #3a3a3a;
+      --text0:     #e8e8e8;
+      --text1:     #aaaaaa;
+      --text2:     #666666;
+      --accent:    #4a9eff;
+      --green:     #4caf7d;
+      --red:       #e05555;
+      --amber:     #d4930a;
+      --font-mono: 'Courier New', Courier, monospace;
+      --font-ui:   system-ui, sans-serif;
+      --radius:    4px;
+      --toolbar-h: 36px;
+      --status-h:  24px;
+      --fbar-h:    36px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg0);
+      color: var(--text0);
+      font-family: var(--font-ui);
+      font-size: 16px; /* Basis: hier zentral ändern */
+      overflow: hidden;
+    }
+
+    body {
+      display: grid;
+      grid-template-rows: var(--toolbar-h) 1fr var(--fbar-h) 20px var(--status-h);
+      height: 100vh;
+    }
+
+    /* ── HEADER ── */
+    #header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 10px;
+      background: var(--bg1);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    #header-title { font-weight: 600; color: var(--accent); font-size: 1rem; letter-spacing: .04em; flex: 1; }
+    #back-to-editor { font-size: 0.812rem; color: var(--text1); text-decoration: none; }
+    #back-to-editor:hover { color: var(--accent); }
+
+    /* ── PANELS ── */
+    #panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      overflow: hidden;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid var(--border);
+    }
+    .panel:last-child { border-right: none; }
+    .panel.active .panel-toolbar { background: var(--bg2); }
+
+    .panel-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      height: var(--toolbar-h);
+      padding: 0 8px;
+      background: var(--bg1);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .panel-path {
+      flex: 1;
+      font-family: var(--font-mono);
+      font-size: 0.812rem;
+      color: var(--accent);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .panel-count { font-size: 0.75rem; color: var(--text2); font-family: var(--font-mono); }
+
+    .panel-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 2px 0;
+    }
+
+    /* ── EINTRÄGE ── */
+    .entry {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 2px 8px;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .entry:hover  { background: var(--bg2); }
+    .entry.selected { background: #7a3a00; color: #ffcc00; }
+    .entry.cursor { outline: 1px solid var(--accent); outline-offset: -1px; }
+    .entry.selected.cursor { outline-color: #ffcc00; }
+
+    .entry .e-icon { flex-shrink: 0; width: 14px; text-align: center; font-size: 0.812rem; color: var(--text2); }
+    .entry .e-name { flex: 1; font-family: var(--font-mono); font-size: 0.875rem; overflow: hidden; text-overflow: ellipsis; }
+    .entry .e-size { flex-shrink: 0; font-family: var(--font-mono); font-size: 0.75rem; color: var(--text1); min-width: 60px; text-align: right; }
+    .entry .e-age  { flex-shrink: 0; font-family: var(--font-mono); font-size: 0.75rem; color: var(--text2); min-width: 32px; text-align: right; }
+
+    .entry-up .e-name  { color: var(--text1); }
+    .entry-dir .e-name { color: var(--accent); font-weight: 600; }
+
+    /* ── FUNKTIONSLEISTE ── */
+    #fbar {
+      display: flex;
+      align-items: stretch;
+      background: var(--bg1);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .fkey {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 0 4px;
+      cursor: pointer;
+      border-right: 1px solid var(--border);
+      font-size: 0.812rem;
+      color: var(--text0);
+      background: var(--bg2);
+      transition: background .1s;
+    }
+    .fkey:last-child { border-right: none; }
+    .fkey:hover { background: var(--bg3); }
+    .fkey:disabled, .fkey.disabled { opacity: .35; pointer-events: none; }
+    .fkey .fnum { font-size: 0.75rem; color: var(--text2); font-family: var(--font-mono); }
+
+    /* ── STATUSLEISTE ── */
+    #statusbar {
+      display: flex;
+      align-items: center;
+      height: var(--status-h);
+      padding: 0 10px;
+      background: var(--bg1);
+      border-top: 1px solid var(--border);
+      font-size: 0.812rem;
+      gap: 8px;
+    }
+    #status-text { flex: 1; }
+    #statusbar.ok    { color: var(--green); }
+    #statusbar.error { color: var(--red); }
+    #statusbar.info  { color: var(--text1); }
+
+    /* ── BUTTONS ── */
+    button {
+      background: var(--bg3);
+      color: var(--text0);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 3px 8px;
+      font-size: 0.812rem;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .15s;
+    }
+    button:hover { background: var(--bg2); border-color: var(--accent); }
+    button:disabled { opacity: .35; cursor: default; pointer-events: none; }
+
+    /* ── MODAL ── */
+    #modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.65);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+    }
+    #modal {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 20px 24px;
+      min-width: 300px;
+      max-width: 420px;
+    }
+    #modal-message { margin-bottom: 12px; line-height: 1.5; }
+    #modal-input {
+      width: 100%; background: var(--bg0); color: var(--text0);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 6px 8px; font-size: 1rem; outline: none; margin-bottom: 12px;
+    }
+    #modal-input:focus { border-color: var(--accent); }
+    #modal-input-wrap { margin-bottom: 4px; }
+    #modal-buttons { display: flex; gap: 8px; justify-content: flex-end; }
+    .hidden { display: none !important; }
+
+    ::-webkit-scrollbar       { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg1); }
+    ::-webkit-scrollbar-thumb { background: var(--text2); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text1); }
+
+    /* GitHub-Panel Markierung */
+    .panel.github-mode .panel-toolbar { border-bottom-color: #6e5494; }
+    .panel.github-mode .panel-path    { color: #c9a0dc; }
+    .btn-gh-toggle { font-size: 0.75rem; padding: 2px 6px; background: var(--bg3); color: var(--text2); border-color: var(--border); }
+    .btn-gh-toggle:hover { color: #c9a0dc; border-color: #6e5494; background: var(--bg2); }
+    .panel.github-mode .btn-gh-toggle { color: #c9a0dc; border-color: #6e5494; }
+    .entry-gh-dir .e-name { color: #c9a0dc; font-weight: 600; }
+    .entry-gh-file .e-name { color: var(--text0); }
+
+    /* Drop-Zone Highlight */
+    .panel-list.drop-over {
+      outline: 2px dashed var(--accent);
+      outline-offset: -3px;
+      background: rgba(74, 158, 255, 0.06);
+    }
+
+    /* Upload-Fortschrittszeile */
+    #upload-bar {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 0 10px;
+      background: var(--bg2);
+      border-top: 1px solid var(--border);
+      font-size: 0.812rem;
+      font-family: var(--font-mono);
+      color: var(--text1);
+      height: 20px;
+      flex-shrink: 0;
+    }
+    #upload-bar.visible { display: flex; }
+    #upload-progress-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* Progress-Overlay für Kopieren/Verschieben */
+    #progress-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.7);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 3000;
+      gap: 12px;
+      font-size: 1rem;
+      color: var(--text0);
+    }
+    #progress-text { font-family: var(--font-mono); font-size: 0.875rem; color: var(--text1); max-width: 400px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div id="header">
+    <span id="header-title">📁 File Commander</span>
+    <a id="back-to-editor" href="index.html">← Editor</a>
+  </div>
+
+  <!-- PANELS -->
+  <div id="panels">
+    <div class="panel active" id="panel-a">
+      <div class="panel-toolbar">
+        <button class="btn-up" data-panel="a" title="Eine Ebene höher">↑</button>
+        <span class="panel-path" id="path-a">/</span>
+        <span class="panel-count" id="count-a"></span>
+        <button class="btn-refresh" data-panel="a" title="Aktualisieren">↺</button>
+      </div>
+      <div class="panel-list" id="list-a"></div>
+    </div>
+    <div class="panel" id="panel-b">
+      <div class="panel-toolbar">
+        <button class="btn-up" data-panel="b" title="Eine Ebene höher">↑</button>
+        <span class="panel-path" id="path-b">/</span>
+        <span class="panel-count" id="count-b"></span>
+        <button class="btn-gh-toggle" data-panel="b" title="Zwischen Server und GitHub wechseln">⇄ GitHub</button>
+        <button class="btn-refresh" data-panel="b" title="Aktualisieren">↺</button>
+      </div>
+      <div class="panel-list" id="list-b"></div>
+    </div>
+  </div>
+
+  <!-- FUNKTIONSLEISTE -->
+  <div id="fbar">
+    <div class="fkey" id="fkey-view">    <span class="fnum">F3</span> Anzeigen</div>
+    <div class="fkey" id="fkey-copy">    <span class="fnum">F5</span> Kopieren</div>
+    <div class="fkey" id="fkey-move">    <span class="fnum">F6</span> Verschieben</div>
+    <div class="fkey" id="fkey-mkdir">   <span class="fnum">F7</span> Neuer Ordner</div>
+    <div class="fkey" id="fkey-delete">  <span class="fnum">F8</span> Löschen</div>
+    <div class="fkey" id="fkey-rename">  <span class="fnum">F9</span> Umbenennen</div>
+    <div class="fkey" id="fkey-newfile"> <span class="fnum">F10</span> Neue Datei</div>
+  </div>
+
+  <!-- UPLOAD-FORTSCHRITT -->
+  <div id="upload-bar">
+    <span>⬆</span>
+    <span id="upload-progress-text"></span>
+  </div>
+
+  <!-- STATUSLEISTE -->
+  <div id="statusbar">
+    <span id="status-text"></span>
+  </div>
+
+  <!-- MODAL -->
+  <div id="modal-overlay" class="hidden">
+    <div id="modal">
+      <p id="modal-message"></p>
+      <div id="modal-input-wrap" class="hidden">
+        <input id="modal-input" type="text">
+      </div>
+      <div id="modal-buttons">
+        <button id="modal-confirm">OK</button>
+        <button id="modal-cancel">Abbrechen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROGRESS -->
+  <div id="progress-overlay" class="hidden">
+    <div>⏳ Vorgang läuft …</div>
+    <div id="progress-text"></div>
+  </div>
+
+<script>
+'use strict';
+
+// ── KONFIGURATION ──────────────────────────────────────────────────────────
+
+const API = 'api.php';
+
+// ── ZUSTAND ────────────────────────────────────────────────────────────────
+
+/**
+ * @typedef {Object} PanelState
+ * @property {string}   path      - Aktueller Verzeichnispfad (relativ zu ROOT, '' = Root)
+ * @property {Array}    entries   - Geladene Einträge
+ * @property {Set}      checked   - Ausgewählte Pfade
+ * @property {number}   cursor    - Cursor-Index
+ */
+
+/** @type {{a: PanelState, b: PanelState}} */
+const panels = {
+  a: { path: '', entries: [], checked: new Set(), cursor: 0, type: 'local' },
+  b: { path: '', entries: [], checked: new Set(), cursor: 0, type: 'local' },
+};
+
+/** Aktives Panel ('a' oder 'b') */
+let activePanel = 'a';
+
+// ── GITHUB-ZUSTAND ────────────────────────────────────────────────────────
+
+/** Persistierte GitHub-Konfiguration */
+const gh = {
+  user: localStorage.getItem('gh_user') || '',
+};
+
+// ── DOM ────────────────────────────────────────────────────────────────────
+
+const elStatusbar  = document.getElementById('statusbar');
+const elStatusText = document.getElementById('status-text');
+const elModalOverlay   = document.getElementById('modal-overlay');
+const elModalMsg       = document.getElementById('modal-message');
+const elModalInput     = document.getElementById('modal-input');
+const elModalInputWrap = document.getElementById('modal-input-wrap');
+const elModalConfirm   = document.getElementById('modal-confirm');
+const elModalCancel    = document.getElementById('modal-cancel');
+const elModalButtons   = document.getElementById('modal-buttons');
+const elProgress       = document.getElementById('progress-overlay');
+const elProgressText   = document.getElementById('progress-text');
+
+// ── STATUSLEISTE ──────────────────────────────────────────────────────────
+
+/** @type {number|null} */
+let statusTimer = null;
+
+/**
+ * @param {string} text
+ * @param {'info'|'ok'|'error'} type
+ * @param {boolean} [persist]
+ */
+function showStatus(text, type = 'info', persist = false) {
+  clearTimeout(statusTimer);
+  elStatusText.textContent = text;
+  elStatusbar.className = type;
+  if (!persist) {
+    statusTimer = setTimeout(() => {
+      elStatusText.textContent = '';
+      elStatusbar.className = '';
+    }, 4000);
+  }
+}
+
+// ── API ────────────────────────────────────────────────────────────────────
+
+/**
+ * @param {string} action
+ * @param {Object} body
+ * @returns {Promise<Object>}
+ */
+async function api(action, body = {}) {
+  const res = await fetch(API, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ action, ...body }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// ── GITHUB API ────────────────────────────────────────────────────────────
+
+/**
+ * Ruft die GitHub REST API über proxy.php auf.
+ */
+async function ghApi(endpoint, method = 'GET', payload = null) {
+  const body = { model: 'github', method, endpoint };
+  if (payload) body.payload = payload;
+  const res = await fetch('proxy.php', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+  });
+  const json = await res.json();
+  // Bei GitHub-Fehlern (4xx) kommt json.message — trotzdem zurückgeben damit
+  // der Aufrufer die echte Fehlermeldung anzeigen kann
+  if (!res.ok && !json.message) throw new Error(`GitHub HTTP ${res.status}`);
+  return json;
+}
+
+// ── GITHUB PANEL ZUSTAND ──────────────────────────────────────────────────
+//
+// Drei Navigationsebenen:
+//   level = 'root'   → listet alle Repos des Users
+//   level = 'repo'   → listet Branches eines Repos
+//   level = 'files'  → listet Dateien/Ordner im Repo (navigierbar)
+//
+// panels[id].ghLevel  : 'root' | 'repo' | 'files'
+// panels[id].ghRepo   : z. B. 'meinrepo'
+// panels[id].ghBranch : z. B. 'main'
+// panels[id].path     : aktueller Dateipfad innerhalb des Repos ('' = Root)
+
+/**
+ * Lädt GitHub-Inhalt für das Panel abhängig vom aktuellen Level.
+ * @param {'a'|'b'} id
+ */
+async function loadPanelGithub(id) {
+  const p = panels[id];
+  if (!gh.user) { showStatus('GitHub: Kein Benutzer konfiguriert', 'info', true); return; }
+
+  const level = p.ghLevel || 'root';
+
+  if (level === 'root') {
+    const data = await ghApi(`/users/${gh.user}/repos?sort=updated&per_page=100`);
+    if (!Array.isArray(data)) { showStatus('GitHub: ' + (data?.message || 'Repos nicht ladbar'), 'error', true); return; }
+    p.entries = data.map(r => ({
+      type: 'dir', name: r.name, path: r.name,
+      ghLevel: 'root-repo', ghDefault: r.default_branch || 'main',
+      desc: r.description || '', private: r.private,
+    }));
+
+  } else if (level === 'repo') {
+    const data = await ghApi(`/repos/${gh.user}/${p.ghRepo}/branches?per_page=100`);
+    if (!Array.isArray(data)) { showStatus('GitHub: ' + (data?.message || 'Branches nicht ladbar'), 'error', true); return; }
+    p.entries = data.map(b => ({
+      type: 'dir', name: b.name, path: b.name, ghLevel: 'repo-branch',
+    }));
+
+  } else {
+    const endpoint = `/repos/${gh.user}/${p.ghRepo}/contents/${p.path}?ref=${p.ghBranch}`;
+    const data = await ghApi(endpoint);
+    if (!Array.isArray(data)) {
+      showStatus('GitHub: ' + (data?.message || data?.error || JSON.stringify(data)), 'error', true);
+      return;
+    }
+    p.entries = data.map(item => ({
+      type: item.type === 'dir' ? 'dir' : 'file',
+      name: item.name, path: item.path,
+      size: item.size || 0, sha: item.sha, ghItem: true, mtime: null,
+    }));
+
+    // Commit-Zeitstempel parallel laden (6er-Batches)
+    const fetchMtime = async (entry) => {
+      try {
+        const commits = await ghApi(`/repos/${gh.user}/${p.ghRepo}/commits?path=${encodeURIComponent(entry.path)}&sha=${p.ghBranch}&per_page=1`);
+        if (Array.isArray(commits) && commits[0]) {
+          const d = commits[0].commit?.committer?.date || commits[0].commit?.author?.date;
+          if (d) entry.mtime = Math.floor(new Date(d).getTime() / 1000);
+        }
+      } catch (e) { console.warn('fetchMtime:', entry.path, e.message); }
+    };
+    for (let i = 0; i < p.entries.length; i += 6) {
+      await Promise.all(p.entries.slice(i, i + 6).map(fetchMtime));
+    }
+  }
+
+  p.checked.clear();
+  renderPanel(id);
+}
+
+/**
+ * Lädt eine Datei von GitHub (Base64 dekodieren).
+ */
+async function ghDownloadFile(panelId, path) {
+  const p = panels[panelId];
+  const data = await ghApi(`/repos/${gh.user}/${p.ghRepo}/contents/${path}?ref=${p.ghBranch}`);
+  if (!data.content) throw new Error('Kein Inhalt von GitHub');
+  return atob(data.content.replace(/\n/g, ''));
+}
+
+/**
+ * Schreibt eine Datei nach GitHub.
+ */
+async function ghUploadFile(panelId, path, content, sha = '') {
+  const p = panels[panelId];
+  const payload = {
+    message: `devEditor: update ${path}`,
+    content: btoa(unescape(encodeURIComponent(content))),
+    branch:  p.ghBranch,
+  };
+  if (sha) payload.sha = sha;
+  return ghApi(`/repos/${gh.user}/${p.ghRepo}/contents/${path}`, 'PUT', payload);
+}
+
+/**
+ * Gibt den SHA einer GitHub-Datei zurück (für Update). Null wenn nicht vorhanden.
+ */
+async function ghGetSha(panelId, path) {
+  try {
+    const p = panels[panelId];
+    const data = await ghApi(`/repos/${gh.user}/${p.ghRepo}/contents/${path}?ref=${p.ghBranch}`);
+    return data.sha || null;
+  } catch (_) { return null; }
+}
+
+// ── GITHUB PANEL TOGGLE ───────────────────────────────────────────────────
+
+async function toggleGithub(id) {
+  if (id !== 'b') return;
+  const p = panels[id];
+
+  if (p.type === 'local') {
+    // Zu GitHub wechseln — User abfragen falls noch nicht gesetzt
+    if (!gh.user) {
+      const user = await showModal('GitHub Benutzername:', '', true);
+      if (!user) return;
+      gh.user = user.trim();
+      localStorage.setItem('gh_user', gh.user);
+    }
+    p.type     = 'github';
+    p.ghLevel  = 'root';
+    p.ghRepo   = '';
+    p.ghBranch = '';
+    p.path     = '';
+    p.cursor   = 0;
+    document.getElementById('panel-b').classList.add('github-mode');
+    document.querySelector('[data-panel="b"].btn-gh-toggle').textContent = '⇄ Server';
+    document.querySelector('[data-panel="b"].btn-up').style.visibility = 'hidden';
+    await loadPanelGithub('b');
+  } else {
+    // Zurück zu Server
+    p.type = 'local';
+    p.path = '';
+    p.cursor = 0;
+    document.getElementById('panel-b').classList.remove('github-mode');
+    document.querySelector('[data-panel="b"].btn-gh-toggle').textContent = '⇄ GitHub';
+    document.querySelector('[data-panel="b"].btn-up').style.visibility = '';
+    await loadPanel('b');
+  }
+}
+
+// ── GITHUB NAVIGATE ───────────────────────────────────────────────────────
+
+async function ghNavigateInto(id, entry) {
+  const p = panels[id];
+
+  if (p.ghLevel === 'root') {
+    // Root → Repo: Branches anzeigen
+    p.ghLevel  = 'repo';
+    p.ghRepo   = entry.name;
+    p.ghBranch = entry.ghDefault || 'main';
+    p.path     = '';
+    p.cursor   = 0;
+  } else if (p.ghLevel === 'repo') {
+    // Repo → Branch: Dateien anzeigen
+    p.ghLevel  = 'files';
+    p.ghBranch = entry.name;
+    p.path     = '';
+    p.cursor   = 0;
+  } else {
+    // Files: Ordner öffnen
+    p.path   = entry.path;
+    p.cursor = 0;
+  }
+  await loadPanelGithub(id);
+}
+
+async function ghNavigateUp(id) {
+  const p = panels[id];
+
+  if (p.ghLevel === 'files' && p.path !== '') {
+    // Im Dateisystem eine Ebene höher
+    const parts = p.path.split('/');
+    parts.pop();
+    p.path   = parts.join('/');
+    p.cursor = 0;
+  } else if (p.ghLevel === 'files') {
+    // Files → zurück zu Branches
+    p.ghLevel = 'repo';
+    p.path    = '';
+    p.cursor  = 0;
+  } else if (p.ghLevel === 'repo') {
+    // Branches → zurück zu Repos
+    p.ghLevel = 'root';
+    p.ghRepo  = '';
+    p.cursor  = 0;
+  }
+  // Bei 'root' nichts tun
+  await loadPanelGithub(id);
+}
+
+// ── LOADPANEL (unified) ───────────────────────────────────────────────────
+
+async function loadPanelAuto(id) {
+  if (panels[id].type === 'github') await loadPanelGithub(id);
+  else await loadPanel(id);
+}
+
+// ── KOPIEREN LOKAL ↔ GITHUB ───────────────────────────────────────────────
+
+async function copyMixed(srcId, dstId, sel) {
+  const srcPanel = panels[srcId];
+  const dstPanel = panels[dstId];
+  const errors   = [];
+  let   done     = 0;
+
+  // Nur im files-Level kopieren
+  if (srcPanel.type === 'github' && srcPanel.ghLevel !== 'files') {
+    showStatus('Ins Repo navigieren um Dateien zu kopieren', 'info', true);
+    return;
+  }
+  if (dstPanel.type === 'github' && dstPanel.ghLevel !== 'files') {
+    showStatus('Ins Repo navigieren um Dateien zu kopieren', 'info', true);
+    return;
+  }
+
+  elProgress.classList.remove('hidden');
+
+  for (const entry of sel) {
+    if (entry.type === 'dir') {
+      showStatus('Ordner-Kopieren zwischen Server↔GitHub nicht unterstützt', 'info', true);
+      continue;
+    }
+    elProgressText.textContent = entry.name;
+    try {
+      if (srcPanel.type === 'local' && dstPanel.type === 'github') {
+        // Server → GitHub
+        const data    = await api('read', { path: entry.path });
+        const content = data.content || '';
+        const dstPath = dstPanel.path ? dstPanel.path + '/' + entry.name : entry.name;
+        const sha     = await ghGetSha(dstId, dstPath);
+        await ghUploadFile(dstId, dstPath, content, sha);
+        done++;
+      } else if (srcPanel.type === 'github' && dstPanel.type === 'local') {
+        // GitHub → Server
+        const content = await ghDownloadFile(srcId, entry.path);
+        const dstPath = dstPanel.path ? dstPanel.path + '/' + entry.name : entry.name;
+        await api('write', { path: dstPath, content });
+        done++;
+      }
+    } catch (e) {
+      errors.push(entry.name + ': ' + e.message);
+    }
+  }
+
+  elProgress.classList.add('hidden');
+
+  if (errors.length === 0) showStatus(`${done} Datei${done !== 1 ? 'en' : ''} kopiert`, 'ok');
+  else showStatus(`${done} ok, ${errors.length} Fehler: ${errors[0]}`, 'error', true);
+
+  await loadPanelAuto(srcId);
+  await loadPanelAuto(dstId);
+}
+
+// ── VERZEICHNIS LADEN ─────────────────────────────────────────────────────
+
+/**
+ * Lädt den Verzeichnisinhalt eines Panels.
+ * @param {'a'|'b'} id
+ */
+async function loadPanel(id) {
+  const p = panels[id];
+  try {
+    const data = await api('tree');
+    // Navigiere zum gewünschten Pfad im Baum
+    p.entries = entriesAtPath(data.tree || [], p.path);
+    p.checked.clear();
+    renderPanel(id);
+  } catch (e) {
+    showStatus('Fehler beim Laden: ' + e.message, 'error', true);
+  }
+}
+
+/**
+ * Gibt die direkten Kinder eines Pfades im Baum zurück.
+ * @param {Array}  tree - Vollständiger Baum
+ * @param {string} path - Relativer Pfad ('' = Root)
+ * @returns {Array}
+ */
+function entriesAtPath(tree, path) {
+  if (path === '') return tree;
+  const parts = path.split('/').filter(Boolean);
+  let current = tree;
+  for (const part of parts) {
+    const dir = current.find(e => e.type === 'dir' && e.name === part);
+    if (!dir) return [];
+    current = dir.children || [];
+  }
+  return current;
+}
+
+// ── PANEL RENDERN ─────────────────────────────────────────────────────────
+
+/**
+ * Rendert einen Panel.
+ * @param {'a'|'b'} id
+ */
+function renderPanel(id) {
+  const p   = panels[id];
+  const el  = document.getElementById('list-' + id);
+  const elPath  = document.getElementById('path-' + id);
+  const elCount = document.getElementById('count-' + id);
+
+  // Scrollposition sichern
+  const savedScroll = el.scrollTop;
+
+  elPath.textContent = panels[id].type === 'github'
+    ? (() => {
+        const p = panels[id];
+        if (p.ghLevel === 'root')  return `⎔ ${gh.user}`;
+        if (p.ghLevel === 'repo')  return `⎔ ${gh.user}/${p.ghRepo}`;
+        return `⎔ ${p.ghRepo} (${p.ghBranch})${p.path ? '/' + p.path : ''}`;
+      })()
+    : '/' + p.path;
+
+  el.innerHTML = '';
+
+  // ".." Eintrag — lokal: nicht Root; GitHub: nicht root-Level
+  const showUp = p.type === 'github' ? (p.ghLevel !== 'root') : (p.path !== '');
+  if (showUp) {
+    const row = makeEntry({ type: 'up', name: '..', path: null }, id, -1);
+    row.dataset.idx = -1;
+    el.appendChild(row);
+  }
+
+  // Sortiert: Ordner zuerst, dann Dateien, je alphabetisch
+  const sorted = [...p.entries].sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  sorted.forEach((entry, i) => {
+    const row = makeEntry(entry, id, i);
+    if (p.type === 'github') {
+      row.classList.add(entry.type === 'dir' ? 'entry-gh-dir' : 'entry-gh-file');
+    }
+    el.appendChild(row);
+  });
+
+  // Zähler
+  const dirs  = p.entries.filter(e => e.type === 'dir').length;
+  const files = p.entries.filter(e => e.type === 'file').length;
+  const sel   = p.checked.size;
+  elCount.textContent = `${dirs}D ${files}F` + (sel > 0 ? ` · ${sel} markiert` : '');
+
+  // Cursor setzen
+  updateCursor(id);
+
+  // Scrollposition wiederherstellen
+  el.scrollTop = savedScroll;
+}
+
+/**
+ * Erstellt ein Eintrags-Element.
+ * @param {Object}   entry
+ * @param {'a'|'b'} panelId
+ * @param {number}  [idx]
+ * @returns {HTMLElement}
+ */
+function makeEntry(entry, panelId, idx) {
+  const p   = panels[panelId];
+  const row = document.createElement('div');
+  row.className = 'entry';
+  if (entry.type === 'up')  row.classList.add('entry-up');
+  if (entry.type === 'dir') row.classList.add('entry-dir');
+  if (idx !== undefined) row.dataset.idx = idx;
+  if (entry.path && p.checked.has(entry.path)) row.classList.add('selected');
+
+  // Icon
+  const icon = document.createElement('span');
+  icon.className = 'e-icon';
+  icon.textContent = entry.type === 'dir' ? '▶' : entry.type === 'up' ? '↑' : '';
+
+  // Name
+  const name = document.createElement('span');
+  name.className = 'e-name';
+  name.textContent = entry.type === 'dir' ? entry.name + '/' : entry.name;
+
+  // Größe
+  const size = document.createElement('span');
+  size.className = 'e-size';
+  if (entry.type === 'file' && entry.size !== undefined) {
+    size.textContent = (entry.size / 1024).toFixed(1) + ' KB';
+  } else if (entry.type === 'dir') {
+    const total = calcDirSize(entry);
+    size.textContent = total > 0 ? (total / 1024).toFixed(1) + ' KB' : '';
+    size.style.color = 'var(--text2)';
+  }
+
+  // Alter
+  const age = document.createElement('span');
+  age.className = 'e-age';
+  const mtimeVal = entry.mtime;
+  if (mtimeVal) {
+    const sec = Math.floor(Date.now() / 1000) - mtimeVal;
+    if      (sec < 60)          age.textContent = sec + 's';
+    else if (sec < 3600)        age.textContent = Math.floor(sec / 60) + 'm';
+    else if (sec < 86400)       age.textContent = Math.floor(sec / 3600) + 'h';
+    else if (sec < 365 * 86400) age.textContent = Math.floor(sec / 86400) + 'd';
+    else                        age.textContent = Math.floor(sec / (365 * 86400)) + 'y';
+  }
+
+  row.append(icon, name, size, age);
+
+  // Klick: Panel aktivieren + Navigation/Auswahl
+  row.addEventListener('click', () => {
+    setActivePanel(panelId);
+    if (entry.type === 'up') {
+      navigateUp(panelId);
+    } else if (entry.type === 'dir') {
+      if (idx !== undefined) p.cursor = idx;
+      updateCursor(panelId);
+    } else {
+      // Datei: Cursor setzen + Auswahl toggeln
+      if (idx !== undefined) p.cursor = idx;
+      updateCursor(panelId);
+      toggleCheck(panelId, entry);
+    }
+  });
+
+  // Doppelklick auf Ordner: öffnen
+  row.addEventListener('dblclick', () => {
+    if (entry.type === 'dir') {
+      if (panels[panelId].type === 'github') ghNavigateInto(panelId, entry);
+      else navigateInto(panelId, entry);
+    }
+  });
+
+  return row;
+}
+
+// ── NAVIGATION ────────────────────────────────────────────────────────────
+
+/**
+ * Navigiert in einen Unterordner.
+ * @param {'a'|'b'} id
+ * @param {Object}  entry
+ */
+async function navigateInto(id, entry) {
+  const p = panels[id];
+  p.path  = p.path ? p.path + '/' + entry.name : entry.name;
+  p.cursor = 0;
+  await loadPanel(id);
+}
+
+/**
+ * Navigiert eine Ebene höher.
+ * @param {'a'|'b'} id
+ */
+async function navigateUp(id) {
+  const p = panels[id];
+  if (p.path === '') return;
+  const parts = p.path.split('/');
+  parts.pop();
+  p.path   = parts.join('/');
+  p.cursor = p.path !== '' ? -1 : 0;  // Cursor auf .. wenn noch nicht Root
+  await loadPanel(id);
+}
+
+// ── AKTIVES PANEL ─────────────────────────────────────────────────────────
+
+/**
+ * Setzt das aktive Panel.
+ * @param {'a'|'b'} id
+ */
+function setActivePanel(id) {
+  activePanel = id;
+  document.getElementById('panel-a').classList.toggle('active', id === 'a');
+  document.getElementById('panel-b').classList.toggle('active', id === 'b');
+  updateCursor(id);
+}
+
+// ── CURSOR ────────────────────────────────────────────────────────────────
+
+/**
+ * Aktualisiert die Cursor-Hervorhebung — immer nur im angegebenen Panel,
+ * und löscht den Cursor im jeweils anderen Panel.
+ * @param {'a'|'b'} id
+ */
+function updateCursor(id) {
+  // Cursor im anderen Panel löschen
+  const otherId = otherPanel(id);
+  document.getElementById('list-' + otherId)
+    .querySelectorAll('.entry').forEach(r => r.classList.remove('cursor'));
+
+  // Cursor im aktiven Panel setzen
+  const el  = document.getElementById('list-' + id);
+  el.querySelectorAll('.entry').forEach(row => row.classList.remove('cursor'));
+  const p      = panels[id];
+  const target = Array.from(el.querySelectorAll('.entry[data-idx]'))
+    .find(r => Number(r.dataset.idx) === p.cursor);
+  if (target) target.classList.add('cursor');
+}
+
+// ── AUSWAHL ───────────────────────────────────────────────────────────────
+
+/**
+ * Toggelt die Auswahl eines Eintrags (Datei oder Ordner rekursiv).
+ * @param {'a'|'b'} id
+ * @param {Object}  entry
+ */
+function toggleCheck(id, entry) {
+  const p = panels[id];
+  if (p.checked.has(entry.path)) {
+    // Deselektieren — bei Ordner auch alle Kinder
+    uncheckRecursive(p.checked, entry);
+  } else {
+    // Selektieren — bei Ordner auch alle Kinder
+    checkRecursive(p.checked, entry);
+  }
+  renderPanel(id);
+}
+
+function checkRecursive(checked, entry) {
+  checked.add(entry.path);
+  if (entry.type === 'dir' && entry.children) {
+    entry.children.forEach(c => checkRecursive(checked, c));
+  }
+}
+
+function uncheckRecursive(checked, entry) {
+  checked.delete(entry.path);
+  if (entry.type === 'dir' && entry.children) {
+    entry.children.forEach(c => uncheckRecursive(checked, c));
+  }
+}
+
+/**
+ * Gibt alle ausgewählten Einträge zurück. Wenn nichts ausgewählt: Eintrag unter Cursor.
+ * @param {'a'|'b'} id
+ * @returns {Array}
+ */
+function getSelection(id) {
+  const p = panels[id];
+  if (p.checked.size > 0) {
+    return p.entries.filter(e => p.checked.has(e.path));
+  }
+  // Fallback: Cursor-Eintrag (nicht ..)
+  if (p.cursor < 0) return [];
+  return getSorted(p)[p.cursor] ? [getSorted(p)[p.cursor]] : [];
+}
+
+// ── MODAL ─────────────────────────────────────────────────────────────────
+
+function showModal(message, defVal = '', hasInput = false) {
+  return new Promise(resolve => {
+    elModalMsg.textContent = message;
+    elModalInputWrap.classList.toggle('hidden', !hasInput);
+    if (hasInput) {
+      elModalInput.value = defVal;
+      setTimeout(() => elModalInput.focus(), 50);
+    }
+    // Standard-Buttons sicherstellen
+    if (!elModalButtons.contains(elModalConfirm)) {
+      elModalButtons.innerHTML = '';
+      elModalButtons.appendChild(elModalConfirm);
+      elModalButtons.appendChild(elModalCancel);
+    }
+    elModalOverlay.classList.remove('hidden');
+
+    const cleanup = () => elModalOverlay.classList.add('hidden');
+    elModalConfirm.onclick = () => { cleanup(); resolve(hasInput ? elModalInput.value.trim() : true); };
+    elModalCancel.onclick  = () => { cleanup(); resolve(hasInput ? '' : false); };
+    elModalInput.onkeydown = e => {
+      e.stopPropagation();
+      if (e.key === 'Enter')  elModalConfirm.click();
+      if (e.key === 'Escape') elModalCancel.click();
+    };
+  });
+}
+
+// ── DATEIOPERATIONEN ──────────────────────────────────────────────────────
+
+/** Ziel-Panel für Kopieren/Verschieben */
+function otherPanel(id) { return id === 'a' ? 'b' : 'a'; }
+
+/**
+ * Sammelt alle Dateipfade eines Eintrags rekursiv.
+ * Bei Ordnern werden alle enthaltenen Dateien und Unterordner gelistet.
+ * @param {Object} entry
+ * @param {string} [base] - Überschreibe den Basis-Pfad
+ * @returns {Array<{from:string, to:string, type:string}>}
+ */
+function collectCopyOps(entry, srcBase, dstBase) {
+  const ops = [];
+  function walk(e, relPath) {
+    const from = relPath;
+    const to   = dstBase + '/' + relPath.slice(srcBase.length + 1 || 0);
+    if (e.type === 'file') {
+      ops.push({ from, to, type: 'file' });
+    } else if (e.type === 'dir') {
+      ops.push({ from, to, type: 'dir' });
+      if (e.children) e.children.forEach(c => walk(c, relPath + '/' + c.name));
+    }
+  }
+  // Relativer Pfad des Eintrags
+  const entryRel = entry.path;
+  walk(entry, entryRel);
+  return ops;
+}
+
+/** Öffnet die Datei unter dem Cursor als Plain-Text in neuem Tab. */
+function actionView() {
+  const id  = activePanel;
+  const p   = panels[id];
+  if (p.cursor < 0) return;
+  const entry = getSorted(p)[p.cursor];
+  if (!entry || entry.type !== 'file') { showStatus('Keine Datei unter Cursor', 'info'); return; }
+  if (p.type === 'github') {
+    // GitHub Raw-URL öffnen
+    window.open(`https://raw.githubusercontent.com/${gh.user}/${p.ghRepo}/${p.ghBranch}/${entry.path}`, '_blank');
+  } else {
+    window.open('/' + entry.path, '_blank');
+  }
+}
+
+/** Kopiert die Auswahl vom aktiven Panel ins andere.
+ * @param {boolean} move - true = Verschieben (nach Kopieren löschen)
+ */
+async function actionCopy(move = false) {
+  const srcId  = activePanel;
+  const dstId  = otherPanel(srcId);
+  const sel    = getSelection(srcId);
+  if (sel.length === 0) { showStatus('Nichts ausgewählt', 'info'); return; }
+
+  // Gemischter Modus: Server ↔ GitHub
+  if (panels[srcId].type !== panels[dstId].type) {
+    if (move) { showStatus('Verschieben zwischen Server↔GitHub nicht unterstützt — bitte Kopieren + manuell löschen', 'info', true); return; }
+    await copyMixed(srcId, dstId, sel);
+    return;
+  }
+
+  const dstPath = panels[dstId].path;
+  const verb    = move ? 'Verschieben' : 'Kopieren';
+  const label   = sel.length === 1 ? `„${sel[0].name}"` : `${sel.length} Einträge`;
+  const dst     = '/' + (dstPath || '(Root)');
+  const ok = await showModal(`${verb}: ${label} → ${dst}?`);
+  if (!ok) return;
+
+  elProgress.classList.remove('hidden');
+  try {
+    for (const entry of sel) {
+      const srcBase = panels[srcId].path;
+      const ops = collectCopyOps(entry, srcBase, dstPath);
+
+      for (const op of ops) {
+        // Ziel-Pfad berechnen
+        const entryName = entry.path.split('/').pop();
+        const relToEntry = op.from.slice(entry.path.length);
+        const toDst = dstPath ? dstPath + '/' + entryName + relToEntry
+                              : entryName + relToEntry;
+
+        elProgressText.textContent = op.from;
+
+        if (op.type === 'dir') {
+          await api('mkdir', { path: toDst });
+        } else {
+          await api('copy', { from: op.from, to: toDst });
+        }
+      }
+
+      if (move) {
+        // Original löschen (Ordner rekursiv via api delete)
+        await api('delete', { path: entry.path });
+      }
+    }
+    showStatus(`${verb} abgeschlossen — ${sel.length} Eintrag/Einträge`, 'ok');
+  } catch (e) {
+    showStatus(`Fehler beim ${verb}: ` + e.message, 'error', true);
+  } finally {
+    elProgress.classList.add('hidden');
+  }
+
+  await loadPanelAuto(srcId);
+  await loadPanelAuto(dstId);
+}
+
+/** Löscht die Auswahl im aktiven Panel. */
+async function actionDelete() {
+  const id  = activePanel;
+  const p   = panels[id];
+  const sel = getSelection(id);
+  if (sel.length === 0) { showStatus('Nichts ausgewählt', 'info'); return; }
+
+  if (p.type === 'github' && p.ghLevel !== 'files') {
+    showStatus('Löschen nur im Datei-Level möglich', 'info'); return;
+  }
+
+  const label = sel.length === 1 ? `„${sel[0].name}“` : `${sel.length} Einträge`;
+  const ok = await showModal(`Löschen: ${label}?`);
+  if (!ok) return;
+
+  elProgress.classList.remove('hidden');
+  try {
+    for (const entry of sel) {
+      elProgressText.textContent = entry.path;
+      if (p.type === 'github') {
+        const sha = await ghGetSha(id, entry.path);
+        if (!sha) throw new Error('SHA nicht gefunden für ' + entry.name);
+        await ghApi(`/repos/${gh.user}/${p.ghRepo}/contents/${entry.path}`, 'DELETE', {
+          message: `devEditor: delete ${entry.path}`,
+          sha,
+          branch: p.ghBranch,
+        });
+      } else {
+        await api('delete', { path: entry.path });
+      }
+    }
+    showStatus(`${sel.length} Eintrag/Einträge gelöscht`, 'ok');
+  } catch (e) {
+    showStatus('Fehler beim Löschen: ' + e.message, 'error', true);
+  } finally {
+    elProgress.classList.add('hidden');
+  }
+  await Promise.all([loadPanelAuto('a'), loadPanelAuto('b')]);
+}
+
+/** Umbenennen des Cursor-Eintrags. */
+async function actionRename() {
+  const id  = activePanel;
+  const p   = panels[id];
+  const sel = getSelection(id);
+  if (sel.length !== 1) { showStatus('Genau einen Eintrag für Umbenennen auswählen', 'info', true); return; }
+
+  if (p.type === 'github') {
+    showStatus('Umbenennen auf GitHub: Datei kopieren + löschen — bitte manuell', 'info', true); return;
+  }
+
+  const entry   = sel[0];
+  const newName = await showModal(`Umbenennen: „${entry.name}“`, entry.name, true);
+  if (!newName || newName === entry.name) return;
+
+  const dir     = p.path;
+  const newPath = dir ? dir + '/' + newName : newName;
+  try {
+    await api('rename', { from: entry.path, to: newPath });
+    showStatus(`Umbenannt → ${newName}`, 'ok');
+  } catch (e) {
+    showStatus('Fehler: ' + e.message, 'error', true);
+  }
+  await Promise.all([loadPanelAuto('a'), loadPanelAuto('b')]);
+}
+
+/** Neuen Ordner anlegen. */
+async function actionMkdir() {
+  const id   = activePanel;
+  const name = await showModal('Neuer Ordner:', '', true);
+  if (!name) return;
+
+  const dir  = panels[id].path;
+  const path = dir ? dir + '/' + name : name;
+  try {
+    await api('mkdir', { path });
+    showStatus(`Ordner „${name}" angelegt`, 'ok');
+  } catch (e) {
+    showStatus('Fehler: ' + e.message, 'error', true);
+  }
+  await Promise.all([loadPanelAuto('a'), loadPanelAuto('b')]);
+}
+
+/** Neue Datei anlegen. */
+async function actionNewFile() {
+  const id   = activePanel;
+  const name = await showModal('Neue Datei:', '', true);
+  if (!name) return;
+
+  const dir  = panels[id].path;
+  const path = dir ? dir + '/' + name : name;
+  try {
+    await api('write', { path, content: '' });
+    showStatus(`Datei „${name}" angelegt`, 'ok');
+  } catch (e) {
+    showStatus('Fehler: ' + e.message, 'error', true);
+  }
+  await Promise.all([loadPanelAuto('a'), loadPanelAuto('b')]);
+}
+
+/**
+ * Berechnet die Gesamtgröße aller Dateien in einem Verzeichnis rekursiv.
+ * @param {Object} entry
+ * @returns {number} Bytes
+ */
+function calcDirSize(entry) {
+  if (entry.type === 'file') return entry.size || 0;
+  if (!entry.children) return 0;
+  return entry.children.reduce((sum, c) => sum + calcDirSize(c), 0);
+}
+
+/**
+ * Gibt die Einträge eines Panels sortiert zurück (Ordner zuerst, dann alphabetisch).
+ * Index entspricht data-idx der gerenderten Einträge.
+ * @param {PanelState} p
+ * @returns {Array}
+ */
+function getSorted(p) {
+  return [...p.entries].sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+// ── TASTATUR ──────────────────────────────────────────────────────────────
+
+document.addEventListener('keydown', e => {
+  // Tab → Panel wechseln (nur Cursor, kein Fokus-Wechsel)
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    setActivePanel(otherPanel(activePanel));
+    return;
+  }
+  // Funktionstasten
+  if (e.key === 'F3') { e.preventDefault(); actionView();      }
+  if (e.key === 'F5') { e.preventDefault(); actionCopy(false); }
+  if (e.key === 'F6') { e.preventDefault(); actionCopy(true);  }
+  if (e.key === 'F7') { e.preventDefault(); actionMkdir();     }
+  if (e.key === 'F8') { e.preventDefault(); actionDelete();    }
+  if (e.key === 'F9') { e.preventDefault(); actionRename();    }
+  if (e.key === 'F10'){ e.preventDefault(); actionNewFile();   }
+
+  // Cursor-Navigation im aktiven Panel
+  const p  = panels[activePanel];
+  const el = document.getElementById('list-' + activePanel);
+  const hasUp = p.type === 'github' ? (p.ghLevel !== 'root') : (p.path !== '');
+  const minIdx  = hasUp ? -1 : 0;
+  const count   = el.querySelectorAll('.entry[data-idx]').length - (hasUp ? 1 : 0); // echte Einträge
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (e.shiftKey && p.cursor >= 0) {
+      // Aktuellen Eintrag toggeln, dann weiterbewegen
+      const sorted = getSorted(p);
+      if (sorted[p.cursor]) toggleCheck(activePanel, sorted[p.cursor]);
+    }
+    p.cursor = Math.min(p.cursor + 1, count - 1);
+    updateCursor(activePanel);
+    const target = Array.from(el.querySelectorAll('.entry[data-idx]')).find(r => Number(r.dataset.idx) === p.cursor);
+    if (target) target.scrollIntoView({ block: 'nearest' });
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (e.shiftKey && p.cursor >= 0) {
+      const sorted = getSorted(p);
+      if (sorted[p.cursor]) toggleCheck(activePanel, sorted[p.cursor]);
+    }
+    p.cursor = Math.max(p.cursor - 1, minIdx);
+    updateCursor(activePanel);
+    const target = Array.from(el.querySelectorAll('.entry[data-idx]')).find(r => Number(r.dataset.idx) === p.cursor);
+    if (target) target.scrollIntoView({ block: 'nearest' });
+  }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (p.cursor === -1) {
+      if (panels[activePanel].type === 'github') ghNavigateUp(activePanel);
+      else navigateUp(activePanel);
+      return;
+    }
+    const entry = getSorted(p)[p.cursor];
+    if (entry?.type === 'dir') {
+      if (panels[activePanel].type === 'github') ghNavigateInto(activePanel, entry);
+      else navigateInto(activePanel, entry);
+    }
+  }
+  if (e.key === 'Backspace') {
+    e.preventDefault();
+    if (panels[activePanel].type === 'github') ghNavigateUp(activePanel);
+    else navigateUp(activePanel);
+  }
+  if (e.key === ' ') {
+    e.preventDefault();
+    if (p.cursor === -1) return;
+    const entry = getSorted(p)[p.cursor];
+    if (entry) toggleCheck(activePanel, entry);
+  }
+});
+
+// ── BUTTON-HANDLER ────────────────────────────────────────────────────────
+
+document.getElementById('fkey-view').addEventListener('click',    () => actionView());
+document.getElementById('fkey-copy').addEventListener('click',    () => actionCopy(false));
+document.getElementById('fkey-move').addEventListener('click',    () => actionCopy(true));
+document.getElementById('fkey-mkdir').addEventListener('click',   () => actionMkdir());
+document.getElementById('fkey-delete').addEventListener('click',  () => actionDelete());
+document.getElementById('fkey-rename').addEventListener('click',  () => actionRename());
+document.getElementById('fkey-newfile').addEventListener('click', () => actionNewFile());
+
+document.querySelectorAll('.btn-gh-toggle').forEach(btn => {
+  btn.addEventListener('click', () => toggleGithub(btn.dataset.panel));
+});
+
+document.querySelectorAll('.btn-up').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const id = btn.dataset.panel;
+    if (panels[id].type === 'github') ghNavigateUp(id);
+    else navigateUp(id);
+  });
+});
+document.querySelectorAll('.btn-refresh').forEach(btn => {
+  btn.addEventListener('click', () => loadPanelAuto(btn.dataset.panel));
+});
+
+// ── DRAG & DROP UPLOAD ────────────────────────────────────────────────────
+
+const elUploadBar      = document.getElementById('upload-bar');
+const elUploadProgress = document.getElementById('upload-progress-text');
+
+/**
+ * Liest alle Dateien aus einem FileSystemEntry rekursiv.
+ * Gibt Array von { file, relPath } zurück.
+ * @param {FileSystemEntry} entry
+ * @param {string} [prefix]
+ * @returns {Promise<Array<{file: File, relPath: string}>>}
+ */
+function readEntryRecursive(entry, prefix = '') {
+  return new Promise((resolve) => {
+    if (entry.isFile) {
+      entry.file(file => {
+        resolve([{ file, relPath: prefix + entry.name }]);
+      }, () => resolve([]));
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const results = [];
+      const readAll = () => {
+        reader.readEntries(async entries => {
+          if (entries.length === 0) {
+            // Alle Untereinträge gelesen
+            const nested = await Promise.all(
+              results.map(e => readEntryRecursive(e, prefix + entry.name + '/'))
+            );
+            resolve(nested.flat());
+          } else {
+            results.push(...entries);
+            readAll(); // readEntries liefert max. 100 auf einmal
+          }
+        }, () => resolve([]));
+      };
+      readAll();
+    } else {
+      resolve([]);
+    }
+  });
+}
+
+/**
+ * Lädt eine einzelne Datei per multipart/form-data an api.php?action=upload.
+ * @param {File}   file
+ * @param {string} dir      - Zielverzeichnis im Server (relativ zu ROOT)
+ * @param {string} relPath  - Relativer Pfad inkl. Dateiname (für Unterordner)
+ */
+async function uploadFile(file, dir, relPath) {
+  const fd = new FormData();
+  fd.append('action',  'upload');
+  fd.append('dir',     dir);
+  fd.append('relPath', relPath);
+  fd.append('file',    file);
+
+  const res = await fetch(API, { method: 'POST', body: fd });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'HTTP ' + res.status);
+  }
+  return res.json();
+}
+
+/**
+ * Verarbeitet alle per Drop übergebenen DataTransferItems.
+ * Unterstützt Dateien und Ordner (via webkitGetAsEntry).
+ * @param {DataTransferItemList} items
+ * @param {string} targetDir - Zielverzeichnis des Panels
+ */
+async function handleDrop(items, targetDir) {
+  // Alle Entries sammeln
+  const entries = [];
+  for (const item of items) {
+    if (item.kind !== 'file') continue;
+    const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+    if (entry) {
+      entries.push(entry);
+    } else {
+      // Fallback: kein webkitGetAsEntry → einfache Datei
+      const file = item.getAsFile();
+      if (file) entries.push({ isFile: true, name: file.name, _file: file });
+    }
+  }
+
+  if (entries.length === 0) return;
+
+  // Alle Dateien flach auflösen
+  const toUpload = [];
+  for (const entry of entries) {
+    if (entry._file) {
+      // Fallback-Entry
+      toUpload.push({ file: entry._file, relPath: entry.name });
+    } else {
+      const files = await readEntryRecursive(entry);
+      toUpload.push(...files);
+    }
+  }
+
+  if (toUpload.length === 0) {
+    showStatus('Keine Dateien im Drop erkannt', 'info');
+    return;
+  }
+
+  elUploadBar.classList.add('visible');
+  let done = 0;
+  const errors = [];
+
+  for (const { file, relPath } of toUpload) {
+    elUploadProgress.textContent = `${done + 1}/${toUpload.length} — ${relPath}`;
+    try {
+      await uploadFile(file, targetDir, relPath);
+      done++;
+    } catch (e) {
+      errors.push(relPath + ': ' + e.message);
+    }
+  }
+
+  elUploadBar.classList.remove('visible');
+  elUploadProgress.textContent = '';
+
+  if (errors.length === 0) {
+    showStatus(`${done} Datei${done !== 1 ? 'en' : ''} hochgeladen`, 'ok');
+  } else {
+    showStatus(`${done} ok, ${errors.length} Fehler: ${errors[0]}`, 'error', true);
+  }
+
+  await Promise.all([loadPanelAuto('a'), loadPanelAuto('b')]);
+}
+
+/**
+ * Registriert Drag-&-Drop-Handler auf einem Panel-List-Element.
+ * @param {HTMLElement} el       - .panel-list Element
+ * @param {string}      panelId  - 'a' oder 'b'
+ */
+function registerDropZone(el, panelId) {
+  el.addEventListener('dragenter', e => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault();
+      el.classList.add('drop-over');
+    }
+  });
+  el.addEventListener('dragover', e => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  });
+  el.addEventListener('dragleave', e => {
+    // Nur entfernen wenn das Leave das Panel selbst verlässt (nicht ein Kind)
+    if (!el.contains(e.relatedTarget)) {
+      el.classList.remove('drop-over');
+    }
+  });
+  el.addEventListener('drop', async e => {
+    e.preventDefault();
+    el.classList.remove('drop-over');
+    const targetDir = panels[panelId].path;
+    await handleDrop(e.dataTransfer.items, targetDir);
+  });
+}
+
+// Drop-Zonen nach DOM-Aufbau registrieren (nach den Panel-List-Elementen)
+registerDropZone(document.getElementById('list-a'), 'a');
+registerDropZone(document.getElementById('list-b'), 'b');
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+
+async function init() {
+  await loadPanel('a');
+  // Panel B startet direkt im GitHub-Modus (wenn Repo konfiguriert, sonst normaler Server)
+  if (gh.user) {
+    await toggleGithub('b');
+  } else {
+    await loadPanel('b');
+  }
+  document.getElementById('list-a').focus();
+}
+
+init();
+</script>
+</body>
+</html>
