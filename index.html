@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    #mobile-block {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #1a1a1a;
+      color: #e8e8e8;
+      font-family: system-ui, sans-serif;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 2rem;
+      z-index: 9999;
+    }
+    #mobile-block h1 { font-size: 1.2rem; margin-bottom: 1rem; }
+    #mobile-block p  { font-size: 0.9rem; color: #aaa; line-height: 1.6; }
+    @media (max-width: 900px) { #mobile-block { display: flex; flex-direction: column; } }
+  </style>
+  <title>devEditor</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <div id="mobile-block">
+    <h1>📱 Zu kleiner Bildschirm</h1>
+    <p>Dieser Editor ist für Desktop- und Chromebook-Nutzung konzipiert.<br>Bitte auf einem größeren Gerät öffnen.</p>
+  </div>
+
+  <!-- LINKES FENSTER: Dateibaum & KI-Kontext -->
+  <aside id="panel-tree">
+    <div id="tree-toolbar">
+      <span id="tree-title">Dateien</span>
+      <a href="filecommander.html" title="File Commander öffnen" style="color:var(--text1);font-size: 0.812rem;text-decoration:none;white-space:nowrap;" target="_blank">📁 NC</a>
+      <button id="btn-refresh" title="Dateibaum aktualisieren">↺</button>
+      <button id="btn-backup-now" title="Backup jetzt erstellen">Backup</button>
+    </div>
+    <div id="file-tree"></div>
+
+    <!-- Kontextmenü Datei -->
+    <nav id="context-menu-file" class="hidden">
+      <ul>
+        <li data-action="rename">Umbenennen</li>
+        <li data-action="delete">Löschen</li>
+        <li class="separator"></li>
+        <li data-action="download">Herunterladen</li>
+      </ul>
+    </nav>
+
+    <!-- Kontextmenü Ordner / Root -->
+    <nav id="context-menu-dir" class="hidden">
+      <ul>
+        <li data-action="set-workdir">📁 Als Arbeitsverzeichnis setzen</li>
+        <li class="separator"></li>
+        <li data-action="new-file">+Datei</li>
+        <li data-action="new-folder">+Ordner</li>
+        <li class="separator"></li>
+        <li data-action="rename">Umbenennen</li>
+        <li data-action="delete">Löschen</li>
+        <li class="separator"></li>
+        <li data-action="download">Herunterladen</li>
+      </ul>
+    </nav>
+  </aside>
+
+  <!-- MITTLERES FENSTER: Code-Editor -->
+  <main id="panel-editor">
+    <div id="editor-toolbar">
+      <span id="editor-filename">— keine Datei geöffnet —</span>
+      <button id="btn-save" title="Speichern (Ctrl+S)" disabled>Speichern</button>
+    </div>
+    <div id="editor-wrap">
+      <div id="line-numbers" aria-hidden="true"></div>
+      <textarea
+        id="editor"
+        spellcheck="false"
+        autocorrect="off"
+        autocapitalize="off"
+        placeholder="Datei aus dem Baum öffnen …"
+        disabled
+      ></textarea>
+    </div>
+
+    <!-- KI-Diff-Ansicht (eingeblendet bei KI-Vorschlag) -->
+    <div id="diff-panel" class="hidden">
+      <div id="diff-toolbar">
+        <span id="diff-filename"></span>
+        <button id="btn-diff-accept">Übernehmen</button>
+        <button id="btn-diff-reject">Verwerfen</button>
+      </div>
+      <div id="diff-content"></div>
+    </div>
+  </main>
+
+  <!-- RECHTES FENSTER: KI-Assistent -->
+  <aside id="panel-ai">
+    <div id="ai-toolbar">
+      <select id="ai-model">
+        <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+        <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+        <option value="claude-opus-4-7">Claude Opus 4.7</option>
+        <option value="deepseek-coder">DeepSeek Coder</option>
+        <option value="deepseek-chat">DeepSeek Chat</option>
+        <option value="gpt-4o">GPT-4o</option>
+        <option value="gpt-4o-mini">GPT-4o mini</option>
+        <option value="gpt-4.1">GPT-4.1</option>
+      </select>
+      <span id="ai-balance" title="API-Guthaben aktualisieren">…</span>
+      <button id="btn-clear-chat" title="Chat leeren">✕</button>
+    </div>
+
+    <div id="ai-context-info">
+      <div id="ai-model-label"></div>
+      <div id="ai-workdir">📁 /</div>
+      <div id="ai-file-list"></div>
+      <div id="ai-context-changed" class="hidden">⚠ Dateibestand geändert — Auswahl prüfen</div>
+    </div>
+    <div id="ai-token-bar">
+      <span id="ai-token-count"></span>
+    </div>
+
+    <div id="ai-messages"></div>
+
+    <div id="ai-input-wrap">
+      <textarea
+        id="ai-input"
+        placeholder="Prompt eingeben …"
+        rows="4"
+      ></textarea>
+      <button id="btn-ai-send" disabled>Senden</button>
+    </div>
+  </aside>
+
+  <!-- STATUSLEISTE -->
+  <footer id="statusbar">
+    <span id="status-text"></span>
+    <button id="status-close" class="hidden" title="Schließen">×</button>
+  </footer>
+
+  <!-- Bestätigungsdialog (Löschen, neue Datei, etc.) -->
+  <div id="modal-overlay" class="hidden">
+    <div id="modal">
+      <p id="modal-message"></p>
+      <div id="modal-input-wrap" class="hidden">
+        <input id="modal-input" type="text">
+      </div>
+      <div id="modal-buttons">
+        <button id="modal-confirm">OK</button>
+        <button id="modal-cancel">Abbrechen</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="diff_match_patch.js"></script>
+  <script src="app.js"></script>
+  <script src="ai-diff.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+  </script>
+</body>
+</html>
