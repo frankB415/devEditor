@@ -41,7 +41,7 @@ html, body {
 /* ── HAUPT-GRID ── */
 body {
   display: grid;
-  grid-template-columns: 280px 1fr 300px;
+  grid-template-columns: 420px 1fr 420px;
   grid-template-rows: 1fr var(--status-h);
   grid-template-areas:
     "tree editor ai"
@@ -190,10 +190,13 @@ button:disabled { opacity: .35; cursor: default; pointer-events: none; }
   overflow: hidden;
 }
 
+
+
+
 #line-numbers {
   width: 44px;
   flex-shrink: 0;
-  padding: 8px 6px 8px 0;
+  padding: 8px 0 8px 8px;
   text-align: right;
   font-family: var(--font-mono);
   font-size: 1rem;
@@ -203,7 +206,11 @@ button:disabled { opacity: .35; cursor: default; pointer-events: none; }
   border-right: 1px solid var(--border);
   overflow: hidden;
   user-select: none;
+  will-change: transform;
+  white-space: pre;        /* ← KRITISCH! */
 }
+
+
 
 #editor {
   flex: 1;
