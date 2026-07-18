@@ -15,9 +15,31 @@
 const CHARS_PER_TOKEN = 4;
 
 /** @const {number} Maximale Token-Anzahl für KI-Kontext */
-const TOKEN_LIMIT = 40000;
+const TOKEN_LIMIT = 80000;
 
 // API-Schlüssel werden serverseitig in proxy.php verwaltet
+
+// ── KONTEXT-CACHE & MUTEX ──────────────────────────────────────────────────
+/** Laufender buildContext()-Promise — verhindert parallele Fetch-Batches */
+let _buildContextPromise = null;
+/** Letzter gebauter Kontext — sendPrompt() nutzt diesen statt neu zu fetchen */
+let _cachedContext = null;
+
+/**
+ * Baut den Kontext — mit Mutex: parallele Aufrufe warten auf denselben Promise.
+ */
+async function buildContextOnce() {
+  if (_buildContextPromise) return _buildContextPromise;
+  _buildContextPromise = buildContext().then(result => {
+    _cachedContext = result;
+    _buildContextPromise = null;
+    return result;
+  }).catch(err => {
+    _buildContextPromise = null;
+    throw err;
+  });
+  return _buildContextPromise;
+}
 
 // ── DOM-REFERENZEN ─────────────────────────────────────────────────────────
 
@@ -87,7 +109,7 @@ async function updateContext() {
   const elWorkdir = document.getElementById('ai-workdir');
   if (elWorkdir) elWorkdir.textContent = '📁 ' + (workDir ? '/' + workDir : '/');
 
-  const { files, tokens } = await buildContext();
+  const { files, tokens } = await buildContextOnce();
 
   // Dateiliste
   elAiFileList.innerHTML = '';
@@ -119,6 +141,10 @@ async function updateContext() {
 }
 
 window.aiUpdateContext = updateContext;
+
+/** Cache invalidieren — aufzurufen wenn sich Dateiauswahl ändert */
+function invalidateContextCache() { _cachedContext = null; }
+window.invalidateContextCache = invalidateContextCache;
 
 /** @type {Array<{role:string, content:string}>} Gesprächshistorie (max. 10 Nachrichten) */
 const chatHistory = [];
@@ -159,7 +185,7 @@ async function sendPrompt() {
   elBtnAiSend.disabled = true;
   elAiContextChanged.classList.add('hidden');
 
-  const { files } = await buildContext();
+  const { files } = _cachedContext || await buildContextOnce();
   const writableFiles = files
     .filter(f => {
       const workDir = window.state ? window.state.workDir : '';
@@ -181,7 +207,10 @@ async function sendPrompt() {
     chatHistory.push({ role: 'assistant', content: response });
     while (chatHistory.length > HISTORY_LIMIT) chatHistory.shift();
 
-    appendMessage(response, 'ai');
+    // Bei Claude: appendMessage wurde bereits in callClaude aufgerufen (Streaming)
+    // Bei OpenAI/DeepSeek: hier appenden
+    const model = elAiModel.value;
+    if (!model.startsWith('claude')) appendMessage(response, 'ai');
     showStatus('KI fertig', 'ok');
 
     // Diff-Extraktion: Suche nach Codeblöcken mit Dateipfad-Hinweisen
@@ -257,13 +286,40 @@ async function callClaude(system, messages, model) {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model:   'claude',
+      model:   'claude-stream',
       payload: { model, max_tokens: 4096, system, messages },
     }),
   });
   if (!res.ok) throw new Error(`Claude API: HTTP ${res.status}`);
-  const data = await res.json();
-  return data.content?.[0]?.text || '';
+
+  // SSE-Stream lesen und token-by-token in den Chat schreiben
+  const msgEl = appendMessage('', 'ai');
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '';
+  let buf = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop(); // letztes unvollständiges Element zurückhalten
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data: ')) continue;
+      const payload = trimmed.slice(6);
+      if (payload === '[DONE]') break;
+      const json = JSON.parse(payload);
+      if (json.error) throw new Error(json.error);
+      if (json.t) {
+        fullText += json.t;
+        msgEl.textContent = fullText;
+        elAiMessages.scrollTop = elAiMessages.scrollHeight;
+      }
+    }
+  }
+  return fullText;
 }
 
 /**
@@ -523,6 +579,7 @@ function appendMessage(text, sender) {
   msg.textContent = text;
   elAiMessages.appendChild(msg);
   elAiMessages.scrollTop = elAiMessages.scrollHeight;
+  return msg;
 }
 
 // ── INIT ───────────────────────────────────────────────────────────────────
