@@ -279,6 +279,7 @@ function renderTreeItem(item, container, depth, openPaths = new Set()) {
       }
     }
     renderTree(treeData, elTree, 0);
+    if (window.invalidateContextCache) window.invalidateContextCache();
     if (window.aiUpdateContext) window.aiUpdateContext();
   });
 
@@ -653,9 +654,10 @@ async function restoreSession() {
         if (aiModelEl) aiModelEl.value = s.aiModel;
       }
       if (s.openPath) {
-        openFile(s.openPath);
+        openFile(s.openPath).then(resolve).catch(resolve);
+      } else {
+        resolve();
       }
-      resolve();
     };
     req.onerror = () => resolve();
   });
@@ -899,6 +901,7 @@ function setDirPerm(path, perm) {
   state.dirPerms[path] = perm;
   persistSession();
   loadTree();
+  if (window.invalidateContextCache) window.invalidateContextCache();
   if (window.aiUpdateContext) window.aiUpdateContext();
 }
 
@@ -1085,7 +1088,7 @@ async function init() {
   }
 
   // console.log('[init] Session wiederhergestellt');
-  if (window.aiUpdateContext) window.aiUpdateContext();
+  if (window.aiUpdateContext) await window.aiUpdateContext();
   // console.log('[init] Fertig');
 }
 
