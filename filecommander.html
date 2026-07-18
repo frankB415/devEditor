@@ -433,14 +433,14 @@ async function api(action, body = {}) {
 async function ghApi(endpoint, method = 'GET', payload = null) {
   const body = { model: 'github', method, endpoint };
   if (payload) body.payload = payload;
+  console.log('[ghApi] →', method, endpoint);
   const res = await fetch('proxy.php', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify(body),
   });
   const json = await res.json();
-  // Bei GitHub-Fehlern (4xx) kommt json.message — trotzdem zurückgeben damit
-  // der Aufrufer die echte Fehlermeldung anzeigen kann
+  console.log('[ghApi] ←', res.status, Array.isArray(json) ? `Array(${json.length})` : json);
   if (!res.ok && !json.message) throw new Error(`GitHub HTTP ${res.status}`);
   return json;
 }
@@ -463,12 +463,14 @@ async function ghApi(endpoint, method = 'GET', payload = null) {
  */
 async function loadPanelGithub(id) {
   const p = panels[id];
+  console.log('[loadPanelGithub]', id, 'gh.user:', gh.user, 'level:', p.ghLevel);
   if (!gh.user) { showStatus('GitHub: Kein Benutzer konfiguriert', 'info', true); return; }
 
   const level = p.ghLevel || 'root';
 
   if (level === 'root') {
     const data = await ghApi(`/users/${gh.user}/repos?sort=updated&per_page=100`);
+    console.log('[loadPanelGithub] repos data:', Array.isArray(data), data);
     if (!Array.isArray(data)) { showStatus('GitHub: ' + (data?.message || 'Repos nicht ladbar'), 'error', true); return; }
     p.entries = data.map(r => ({
       type: 'dir', name: r.name, path: r.name,
@@ -556,12 +558,13 @@ async function toggleGithub(id) {
   if (id !== 'b') return;
   const p = panels[id];
 
+  console.log('[toggleGithub]', id, 'p.type:', p.type, 'gh.user:', gh.user);
   if (p.type === 'local') {
-    // Zu GitHub wechseln — User abfragen falls noch nicht gesetzt
+    // Zu GitHub wechseln — User automatisch vom Token holen
     if (!gh.user) {
-      const user = await showModal('GitHub Benutzername:', '', true);
-      if (!user) return;
-      gh.user = user.trim();
+      const data = await ghApi('/user');
+      if (!data.login) { showStatus('GitHub: Token ungültig', 'error', true); return; }
+      gh.user = data.login;
       localStorage.setItem('gh_user', gh.user);
     }
     p.type     = 'github';
@@ -853,7 +856,7 @@ function makeEntry(entry, panelId, idx) {
   row.addEventListener('click', () => {
     setActivePanel(panelId);
     if (entry.type === 'up') {
-      navigateUp(panelId);
+      //navigateUp(panelId);
     } else if (entry.type === 'dir') {
       if (idx !== undefined) p.cursor = idx;
       updateCursor(panelId);
@@ -866,12 +869,24 @@ function makeEntry(entry, panelId, idx) {
   });
 
   // Doppelklick auf Ordner: öffnen
-  row.addEventListener('dblclick', () => {
+ /* row.addEventListener('dblclick', () => {
     if (entry.type === 'dir') {
       if (panels[panelId].type === 'github') ghNavigateInto(panelId, entry);
       else navigateInto(panelId, entry);
     }
+  });*/
+
+  // Doppelklick auf Ordner oder ".."
+  row.addEventListener('dblclick', () => {
+    if (entry.type === 'dir') {
+      if (panels[panelId].type === 'github') ghNavigateInto(panelId, entry);
+      else navigateInto(panelId, entry);
+    } else if (entry.type === 'up') {
+      if (panels[panelId].type === 'github') ghNavigateUp(panelId);
+      else navigateUp(panelId);
+    }
   });
+
 
   return row;
 }
